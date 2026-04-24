@@ -140,7 +140,7 @@ if [ -n "$rate_pct" ]; then
     rate_section="${DIM}5h ${RESET}${rate_color}${rate_int}%${RESET}"
     resets_epoch=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty')
     if [ -n "$resets_epoch" ]; then
-        resets_time=$(date -d "@${resets_epoch}" +%H:%M 2>/dev/null || true)
+        resets_time=$(date -d "@${resets_epoch}" +%H:%M 2>/dev/null || date -r "${resets_epoch}" +%H:%M 2>/dev/null || true)
         if [ -n "$resets_time" ]; then
             seconds_left=$((resets_epoch - $(date +%s)))
             if   [ "$seconds_left" -lt 1800 ]; then reset_color="${BOLD}${GREEN}"   # < 30m
