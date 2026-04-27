@@ -1,6 +1,6 @@
 #!/bin/bash
 # Claude Code rich status line — developer dashboard
-# Layout: [model] │ [ctx bar pct] │ [$cost] │ [branch] [│ 5h% + resets HH:MM]
+# Layout: [model] │ [ctx bar pct] │ [$cost] │ [branch] [│ 5h% + re HH:MM] [│ wk% + re MM/DD]
 #
 # =============================================================================
 # COLOR SEMANTICS — every stateful value maps to a single R/Y/G tension gradient
@@ -11,7 +11,7 @@
 # RED     — tension / expensive / off-home / far-from-good-event / limit-near
 #
 # DIM     — LABELS + SEPARATORS ONLY.  Used for `ctx`, `cost`, `on`, `5h`,
-#           `resets`, and the `│` separator.  Never for state values.
+#           `wk`, `re`, and the `│` separator.  Never for state values.
 # BOLD    — applied on top of R/Y/G when the signal is an extreme (e.g. reset
 #           imminent = BOLD GREEN) so the pop is brightness-based, not a new hue.
 #
@@ -23,7 +23,9 @@
 #   cost        ≥$200 RED, ≥$100 YELLOW, else GREEN
 #   branch      main/master → GREEN, anything else → RED  (feature = active work)
 #   5h %        ≥75% RED, ≥50% YELLOW, else GREEN
-#   resets HH:M >2h RED, 30m–2h YELLOW, <30m BOLD GREEN  (close = relief incoming)
+#   re HH:MM    >2h RED, 30m–2h YELLOW, <30m BOLD GREEN  (close = relief incoming)
+#   wk %        ≥75% RED, ≥50% YELLOW, else GREEN
+#   re MM/DD    >3d RED, 1–3d YELLOW, <1d BOLD GREEN  (close = relief incoming)
 #
 # If you add a new stateful slot, first decide which end of its gradient is
 # "good" — then anchor GREEN there and flow through YELLOW to RED at the "bad"
@@ -64,8 +66,8 @@ esac
 used=$(echo "$input" | jq -r '.context_window.used_percentage // empty')
 if [ -n "$used" ]; then
     pct=$(printf '%.0f' "$used")
-    filled=$(awk "BEGIN { printf \"%d\", $used * 16 / 100 }")
-    empty=$((16 - filled))
+    filled=$(awk "BEGIN { printf \"%d\", $used * 8 / 100 }")
+    empty=$((8 - filled))
     bar=""
     i=0; while [ $i -lt $filled ]; do bar="${bar}█"; i=$((i+1)); done
     i=0; while [ $i -lt $empty  ]; do bar="${bar}░"; i=$((i+1)); done
@@ -147,11 +149,38 @@ if [ -n "$rate_pct" ]; then
             elif [ "$seconds_left" -lt 7200 ]; then reset_color="$YELLOW"           # 30m–2h
             else                                    reset_color="$RED"              # > 2h
             fi
-            rate_section="${rate_section} ${DIM}resets ${RESET}${reset_color}${resets_time}${RESET}"
+            rate_section="${rate_section} ${DIM}re ${RESET}${reset_color}${resets_time}${RESET}"
         fi
     fi
 else
     rate_section=""
+fi
+
+# ---------- Weekly limit (all models) + reset date ----------
+# Same tension axis as 5h, but the clock dimension is days not hours so the
+# reset color thresholds stretch accordingly (>3d / 1–3d / <1d).
+week_pct=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
+if [ -n "$week_pct" ]; then
+    week_int=$(printf '%.0f' "$week_pct")
+    if   [ "$week_int" -ge 75 ]; then week_color="$RED"
+    elif [ "$week_int" -ge 50 ]; then week_color="$YELLOW"
+    else                              week_color="$GREEN"
+    fi
+    week_section="${DIM}wk ${RESET}${week_color}${week_int}%${RESET}"
+    week_epoch=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty')
+    if [ -n "$week_epoch" ]; then
+        week_reset=$(date -d "@${week_epoch}" +%m/%d 2>/dev/null || date -r "${week_epoch}" +%m/%d 2>/dev/null || true)
+        if [ -n "$week_reset" ]; then
+            week_seconds_left=$((week_epoch - $(date +%s)))
+            if   [ "$week_seconds_left" -lt 86400 ];  then week_reset_color="${BOLD}${GREEN}"  # < 1d
+            elif [ "$week_seconds_left" -lt 259200 ]; then week_reset_color="$YELLOW"          # 1d–3d
+            else                                           week_reset_color="$RED"             # > 3d
+            fi
+            week_section="${week_section} ${DIM}re ${RESET}${week_reset_color}${week_reset}${RESET}"
+        fi
+    fi
+else
+    week_section=""
 fi
 
 # ---------- Assemble ----------
@@ -161,6 +190,7 @@ parts=()
 [ -n "$cost_section"   ] && parts+=("$cost_section")
 [ -n "$branch_section" ] && parts+=("$branch_section")
 [ -n "$rate_section"   ] && parts+=("$rate_section")
+[ -n "$week_section"   ] && parts+=("$week_section")
 
 if [ ${#parts[@]} -eq 0 ]; then
     exit 0
