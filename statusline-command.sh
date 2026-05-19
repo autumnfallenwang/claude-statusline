@@ -1,6 +1,6 @@
 #!/bin/bash
 # Claude Code rich status line — developer dashboard
-# Layout: [model] │ [ctx bar pct] │ [$cost] │ [branch] [│ 5h% + re HH:MM] [│ wk% + re MM/DD]
+# Layout: [model effort] │ [ctx bar pct] │ [$cost] │ [branch] [│ 5h% + re HH:MM] [│ wk% + re MM/DD]
 #
 # =============================================================================
 # COLOR SEMANTICS — every stateful value maps to a single R/Y/G tension gradient
@@ -19,6 +19,8 @@
 #
 # Per-slot rules:
 #   model       Opus → RED, Sonnet → YELLOW, Haiku → GREEN, unknown → BOLD
+#   effort      low → GREEN, medium → CHART (149), high → YELLOW,
+#               xhigh → PEACH (216), max → RED, auto → GRAY (244 — off-axis)
 #   ctx bar+%   ≥75% RED, ≥50% YELLOW, else GREEN  (bar and % agree — single color)
 #   cost        ≥$200 RED, ≥$100 YELLOW, else GREEN
 #   branch      main/master → GREEN, anything else → RED  (feature = active work)
@@ -47,6 +49,11 @@ YELLOW='\033[0;33m'
 # connotation from red wavelengths; calm but clearly attention-worthy.
 # (Variable name kept as RED because it's the semantic slot, not the hue.)
 RED='\033[38;5;141m'
+# Effort-only intermediates: extend the green→yellow→lavender ramp to 5 stops
+# (low/medium/high/xhigh/max) and add a dim off-axis slot for `auto`.
+CHART='\033[38;5;149m'   # chartreuse — between GREEN and YELLOW
+PEACH='\033[38;5;216m'   # peach      — between YELLOW and lavender
+GRAY='\033[38;5;244m'    # dim gray   — off-axis (system-managed)
 
 SEP="${DIM}│${RESET}"
 
@@ -60,6 +67,34 @@ case "$(printf '%s' "$model_raw" | tr '[:upper:]' '[:lower:]')" in
     *haiku*)  model_color="$GREEN" ;;
     *)        model_color="$BOLD" ;;
 esac
+
+# ---------- Effort (low/medium/high/xhigh/max/auto) ----------
+# Sits in the same slot as model (no separator). Try input JSON first in case
+# Claude Code passes it; fall back to settings.json (project → user).
+effort=$(echo "$input" | jq -r '.effort.level? // .effort? // .effortLevel? // empty')
+if [ -z "$effort" ]; then
+    for f in "${CLAUDE_CWD:-$PWD}/.claude/settings.local.json" \
+             "${CLAUDE_CWD:-$PWD}/.claude/settings.json" \
+             "$HOME/.claude/settings.json"; do
+        [ -f "$f" ] || continue
+        effort=$(jq -r '.effortLevel // empty' "$f" 2>/dev/null)
+        [ -n "$effort" ] && break
+    done
+fi
+if [ -n "$effort" ]; then
+    case "$effort" in
+        low)    effort_color="$GREEN"  ;;
+        medium) effort_color="$CHART"  ;;
+        high)   effort_color="$YELLOW" ;;
+        xhigh)  effort_color="$PEACH"  ;;
+        max)    effort_color="$RED"    ;;
+        auto)   effort_color="$GRAY"   ;;
+        *)      effort_color="$BOLD"   ;;
+    esac
+    effort_section="${effort_color}${effort}${RESET}"
+else
+    effort_section=""
+fi
 
 # ---------- Context bar ----------
 # Bar color and % number now share the same color (was BRIGHT_WHITE split — fixed).
@@ -185,7 +220,11 @@ fi
 
 # ---------- Assemble ----------
 parts=()
-[ -n "$model"          ] && parts+=("${model_color}${model}${RESET}")
+if [ -n "$model" ]; then
+    model_text="${model_color}${model}${RESET}"
+    [ -n "$effort_section" ] && model_text="${model_text} ${effort_section}"
+    parts+=("$model_text")
+fi
 [ -n "$ctx_section"    ] && parts+=("$ctx_section")
 [ -n "$cost_section"   ] && parts+=("$cost_section")
 [ -n "$branch_section" ] && parts+=("$branch_section")
