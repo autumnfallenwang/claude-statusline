@@ -20,7 +20,8 @@
 # Per-slot rules:
 #   model       Opus → RED, Sonnet → YELLOW, Haiku → GREEN, unknown → BOLD
 #   effort      low → GREEN, medium → CHART (149), high → YELLOW,
-#               xhigh → PEACH (216), max → RED, auto → GRAY (244 — off-axis)
+#               xhigh → PEACH (216), max → RED, ultracode → BOLD RED (beyond
+#               max — same tension hue, brightness-based pop), auto → GRAY (244 — off-axis)
 #   ctx bar+%   ≥75% RED, ≥50% YELLOW, else GREEN  (bar and % agree — single color)
 #   cost        ≥$200 RED, ≥$100 YELLOW, else GREEN
 #   branch      main/master → GREEN, anything else → RED  (feature = active work)
@@ -50,7 +51,10 @@ YELLOW='\033[0;33m'
 # (Variable name kept as RED because it's the semantic slot, not the hue.)
 RED='\033[38;5;141m'
 # Effort-only intermediates: extend the green→yellow→lavender ramp to 5 stops
-# (low/medium/high/xhigh/max) and add a dim off-axis slot for `auto`.
+# (low/medium/high/xhigh/max) and add a dim off-axis slot for `auto`. The 6th
+# level `ultracode` sits beyond max — no new hue, just BOLD on the lavender
+# endpoint so it reads as "max, intensified" (same brightness-pop rule as the
+# imminent-reset clocks).
 CHART='\033[38;5;149m'   # chartreuse — between GREEN and YELLOW
 PEACH='\033[38;5;216m'   # peach      — between YELLOW and lavender
 GRAY='\033[38;5;244m'    # dim gray   — off-axis (system-managed)
@@ -83,13 +87,14 @@ if [ -z "$effort" ]; then
 fi
 if [ -n "$effort" ]; then
     case "$effort" in
-        low)    effort_color="$GREEN"  ;;
-        medium) effort_color="$CHART"  ;;
-        high)   effort_color="$YELLOW" ;;
-        xhigh)  effort_color="$PEACH"  ;;
-        max)    effort_color="$RED"    ;;
-        auto)   effort_color="$GRAY"   ;;
-        *)      effort_color="$BOLD"   ;;
+        low)       effort_color="$GREEN"        ;;
+        medium)    effort_color="$CHART"        ;;
+        high)      effort_color="$YELLOW"       ;;
+        xhigh)     effort_color="$PEACH"        ;;
+        max)       effort_color="$RED"          ;;
+        ultracode) effort_color="${BOLD}${RED}" ;;
+        auto)      effort_color="$GRAY"         ;;
+        *)         effort_color="$BOLD"         ;;
     esac
     effort_section="${effort_color}${effort}${RESET}"
 else
